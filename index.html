@@ -160,7 +160,12 @@
 
   <section class="card" id="emp-card">
     <h2>Employees <span class="sub" id="emp-sub"></span></h2>
-    <div id="emp-controls" style="margin-bottom:10px; display:none">
+    <div id="emp-controls" style="margin-bottom:10px; display:none; gap:8px; flex-wrap:wrap">
+      <div class="seg" id="emp-filter">
+        <button data-filter="all" class="on">All</button>
+        <button data-filter="profit">Profitable</button>
+        <button data-filter="loss">Losing</button>
+      </div>
       <div class="seg" id="emp-sort">
         <button data-sort="recent">Most recent</button>
         <button data-sort="idle" class="on">Least recent</button>
@@ -411,7 +416,7 @@ async function loadEmployees(workers, companyMeta){
   const list=[...map.values()];
   $('emp-sub').textContent=`${list.length}`;
   if(!list.length){ body.innerHTML=`<div class="status">No employees.</div>`; return; }
-  $('emp-controls').style.display='';
+  $('emp-controls').style.display='flex';
 
   const now=Date.now(), cutoff=now-WAGE_WINDOW_H*3.6e6;
   await Promise.all(list.map(async w=>{
@@ -451,9 +456,18 @@ function renderEmployees(){
   if(!EMP_STATE) return;
   const {list, now}=EMP_STATE;
   const mode=document.querySelector('#emp-sort button.on')?.dataset.sort||'idle';
+  const filter=document.querySelector('#emp-filter button.on')?.dataset.filter||'all';
   const lastAt=w=>w.punches[0]?.at||0;
-  const sorted=[...list].sort((a,b)=> mode==='idle' ? lastAt(a)-lastAt(b) : lastAt(b)-lastAt(a));
+  let arr=[...list];
+  if(filter==='profit') arr=arr.filter(w=>w.margin!=null && w.margin>0);
+  else if(filter==='loss') arr=arr.filter(w=>w.margin!=null && w.margin<=0);
+  const sorted=arr.sort((a,b)=> mode==='idle' ? lastAt(a)-lastAt(b) : lastAt(b)-lastAt(a));
 
+  if(!sorted.length){
+    const lbl=filter==='profit'?'profitable':filter==='loss'?'losing':'';
+    $('emp-body').innerHTML=`<div class="status">No ${lbl} employees.</div>`;
+    return;
+  }
   $('emp-body').innerHTML=sorted.map(w=>{
     const last=w.punches[0], lastMs=last?now-last.at:null;
     let cls='idle',label='Idle';
@@ -631,6 +645,7 @@ async function boot(){
   btn.classList.remove('spinning');
 }
 $('emp-sort').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; segOn('emp-sort',b); renderEmployees(); });
+$('emp-filter').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; segOn('emp-filter',b); renderEmployees(); });
 $('gate-go').addEventListener('click',()=>{ const v=$('gate-input').value.trim(); if(!v)return; localStorage.setItem('warera_api_token',v); TOKEN=v; boot(); });
 $('gate-input').addEventListener('keydown',e=>{ if(e.key==='Enter') $('gate-go').click(); });
 $('refresh').addEventListener('click',boot);
