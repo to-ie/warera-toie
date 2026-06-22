@@ -119,6 +119,15 @@
   .chart{width:100%; height:150px; display:block; overflow:visible}
   .chart .ln{fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round}
   .w-axis{display:flex; justify-content:space-between; color:var(--muted); font-size:11px; margin-top:5px}
+  .w-chart-wrap{position:relative; cursor:pointer; touch-action:pan-y}
+  .w-tip{position:absolute; transform:translate(-50%,-122%); background:var(--panel2); border:1px solid var(--line);
+        border-radius:8px; padding:5px 9px; font-size:12px; white-space:nowrap; pointer-events:none;
+        box-shadow:0 5px 16px rgba(0,0,0,.45); z-index:5; display:none}
+  .w-tip .v{font-weight:700; font-variant-numeric:tabular-nums}
+  .w-tip .v .b{color:var(--muted); font-weight:600}
+  .w-tip .d{color:var(--muted); font-size:10.5px; margin-top:1px}
+  .w-hl{position:absolute; width:10px; height:10px; border-radius:50%; transform:translate(-50%,-50%);
+        border:2px solid var(--bg); pointer-events:none; z-index:4; display:none}
 
   a{color:var(--link); text-decoration:none}
   .foot{color:var(--muted); font-size:11.5px; text-align:center; margin-top:8px; line-height:1.6}
@@ -166,7 +175,7 @@
   </section>
 
   <div class="foot">
-    Direct to <code>api2.warera.io</code> — no proxy. Token stays on this device. Keep this page private.
+    made with &lt;3 by toie
   </div>
 </div>
 
@@ -419,15 +428,18 @@ async function loadEmployees(workers, companyMeta){
       w.damage=sk.damage?.value ?? null;
       w.punches=(txs?.items||[]).filter(t=>t.sellerId===w.id&&t.buyerId===USER_ID)
         .map(t=>({at:new Date(t.createdAt).getTime(), amt:t.money})).sort((a,b)=>b.at-a.at);
-      // profitability: margin per base point = (1+(fid+bonus)/100)*netPP - wage
+      // Profitability — matches daily-profit.js empNet():
+      //   daily ₿ = basePP × (netPP × (1 + fid/100) − wage)
+      // netPP already bakes in the region bonus, so the output multiplier here
+      // is FIDELITY ONLY — adding bonus again would double-count it.
       const cm=companyMeta?.[w.companyId];
-      const bonus=cm?cm.bonusTotal:0, np=cm?cm.netPP:null;
+      const np=cm?cm.netPP:null;
       if(np!=null && w.wage!=null){
-        const margin=(1+(w.fidelity+bonus)/100)*np - w.wage;
-        w.margin=margin;
         const basePP=(w.production||0)*(w.energy||0)*WORK_FACTOR;
-        w.dailyProfit=basePP*margin;
-      } else { w.margin=null; w.dailyProfit=null; }
+        w.margin=np*(1+(w.fidelity||0)/100) - w.wage;   // per base PP
+        w.dailyProfit=basePP*w.margin;
+        w.breakeven=np*1.10;                            // max wage profitable at any fidelity (fid=10)
+      } else { w.margin=null; w.dailyProfit=null; w.breakeven=null; }
     }catch{ w.name='?'; w.punches=[]; w.margin=null; }
   }));
 
@@ -451,9 +463,13 @@ function renderEmployees(){
     const recent=w.punches.filter(p=>p.at>=cutoffOf(now));
     // profitability pill
     let prof='';
+    const perDay=w.dailyProfit!=null?` · ₿${num(w.dailyProfit,1)}/d`:'';
     if(w.margin==null) prof=`<span class="pill unk" title="Need market price + recipe to compute">profit ?</span>`;
-    else if(w.margin>0) prof=`<span class="pill prof" title="Output value beats their wage${w.dailyProfit!=null?` · ≈ ₿${num(w.dailyProfit,2)}/day net`:''}">profitable${w.dailyProfit!=null?` · ₿${num(w.dailyProfit,1)}/d`:''}</span>`;
-    else prof=`<span class="pill loss" title="Their wage exceeds the value they produce${w.dailyProfit!=null?` · ≈ ₿${num(w.dailyProfit,2)}/day`:''}">losing${w.dailyProfit!=null?` · ₿${num(w.dailyProfit,1)}/d`:''}</span>`;
+    else if(w.margin>0) prof=`<span class="pill prof" title="Output value beats their wage — ≈ ₿${num(w.dailyProfit,2)}/day net to you">profitable${perDay}</span>`;
+    else {
+      const anyFid = w.breakeven!=null && w.wage>w.breakeven;
+      prof=`<span class="pill loss" title="Wage exceeds the value they produce — ≈ ₿${num(w.dailyProfit,2)}/day.${anyFid?` Wage is above the break-even (₿${num(w.breakeven,3)}/pt at fidelity 10) — unprofitable at ANY fidelity.`:' Raising their fidelity could turn this around.'}">losing${perDay}${anyFid?' (any fid)':''}</span>`;
+    }
 
     const pays=w.punches.slice(0,8).map(p=>`<div class="pay"><span>${esc(ago(now-p.at))}</span><span class="amt">₿${num(p.amt,3)}</span></div>`).join('');
     return `<div class="emp">
@@ -568,15 +584,39 @@ function renderWealth(){
       <div class="w-now"><span class="b">₿</span>${num(now,0)}</div>
       <div class="w-delta ${delta>=0?'up':'down'}">${delta>=0?'▲':'▼'} ₿${num(Math.abs(delta),0)} (${delta>=0?'+':'−'}${num(Math.abs(dpct),1)}%) · ${M.label}</div>
     </div>
-    <svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="${M.color}" stop-opacity=".4"/><stop offset="1" stop-color="${M.color}" stop-opacity="0"/>
-      </linearGradient></defs>
-      <path d="${area}" fill="url(#${gid})"/>
-      <path class="ln" d="${path}" stroke="${M.color}"/>
-      <circle cx="${x(li).toFixed(1)}" cy="${y(series[li].v).toFixed(1)}" r="3.5" fill="${M.color}"/>
-    </svg>
-    <div class="w-axis"><span>${fmtDate(series[0].t)}</span><span>${series.length} ${bucket}s</span><span>now</span></div>`;
+    <div class="w-chart-wrap">
+      <svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="${M.color}" stop-opacity=".4"/><stop offset="1" stop-color="${M.color}" stop-opacity="0"/>
+        </linearGradient></defs>
+        <path d="${area}" fill="url(#${gid})"/>
+        <path class="ln" d="${path}" stroke="${M.color}"/>
+        <circle cx="${x(li).toFixed(1)}" cy="${y(series[li].v).toFixed(1)}" r="3.5" fill="${M.color}"/>
+      </svg>
+      <div class="w-hl"></div>
+      <div class="w-tip"></div>
+    </div>
+    <div class="w-axis"><span>${fmtDate(series[0].t)}</span><span>tap chart for a date</span><span>now</span></div>`;
+
+  // tap / click anywhere on the chart → reveal the nearest point's value + date
+  const wrap=box.querySelector('.w-chart-wrap'), tip=wrap.querySelector('.w-tip'), hl=wrap.querySelector('.w-hl');
+  function showAt(i){
+    const p=series[i], lx=x(i)/W*100, ly=y(p.v)/H*100;
+    hl.style.display='block'; hl.style.left=lx+'%'; hl.style.top=ly+'%'; hl.style.background=M.color;
+    tip.style.display='block'; tip.style.left=Math.max(8,Math.min(92,lx))+'%'; tip.style.top=ly+'%';
+    tip.innerHTML=`<div class="v"><span class="b">₿</span>${num(p.v,0)}</div><div class="d">${tipDate(p.t,bucket)}</div>`;
+  }
+  wrap.addEventListener('click',ev=>{
+    const r=wrap.getBoundingClientRect();
+    const ratio=(ev.clientX-r.left)/r.width;
+    showAt(Math.max(0,Math.min(series.length-1,Math.round(ratio*(series.length-1)))));
+  });
+}
+function tipDate(t,bucket){
+  const d=new Date(t);
+  if(bucket==='month') return d.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  if(bucket==='week')  return 'Week of '+d.toLocaleDateString(undefined,{day:'numeric',month:'short'});
+  return d.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short',year:'numeric'});
 }
 
 /* ════════════════ boot ════════════════ */
