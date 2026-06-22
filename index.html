@@ -153,8 +153,8 @@
     <h2>Employees <span class="sub" id="emp-sub"></span></h2>
     <div id="emp-controls" style="margin-bottom:10px; display:none">
       <div class="seg" id="emp-sort">
-        <button data-sort="recent" class="on">Most recent</button>
-        <button data-sort="idle">Least recent</button>
+        <button data-sort="recent">Most recent</button>
+        <button data-sort="idle" class="on">Least recent</button>
       </div>
     </div>
     <div id="emp-body"><div class="status"><span class="spin"></span>Loading…</div></div>
@@ -438,7 +438,7 @@ async function loadEmployees(workers, companyMeta){
 function renderEmployees(){
   if(!EMP_STATE) return;
   const {list, now}=EMP_STATE;
-  const mode=document.querySelector('#emp-sort button.on')?.dataset.sort||'recent';
+  const mode=document.querySelector('#emp-sort button.on')?.dataset.sort||'idle';
   const lastAt=w=>w.punches[0]?.at||0;
   const sorted=[...list].sort((a,b)=> mode==='idle' ? lastAt(a)-lastAt(b) : lastAt(b)-lastAt(a));
 
