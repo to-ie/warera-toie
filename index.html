@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My War Era dashboard</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c232d; --line:#2a313c;
+    --text:#e6edf3; --muted:#8b949e; --accent:#2ea043; --accent2:#3fb950;
+    --warn:#d29922; --danger:#f85149; --link:#58a6ff;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-text-size-adjust:100%; padding:env(safe-area-inset-top) 0 40px;
+  }
+  .wrap{max-width:560px; margin:0 auto; padding:16px 14px}
+  header{display:flex; align-items:center; gap:10px; margin:4px 0 18px}
+  header h1{font-size:18px; margin:0; font-weight:650}
+  header .who{color:var(--muted); font-size:13px}
+  .flag-irl{font-size:20px}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+        padding:14px; margin:0 0 16px}
+  .card h2{font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
+        margin:0 0 12px; font-weight:600; display:flex; align-items:center; gap:8px}
+  .card h2 .sub{margin-left:auto; font-size:12px; text-transform:none; letter-spacing:0; color:var(--muted); font-weight:400}
+
+  .status{color:var(--muted); font-size:13px; padding:8px 2px}
+  .status.error{color:var(--danger)}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line);
+        border-top-color:var(--accent2);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:7px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* token gate */
+  #gate{display:none; gap:8px; flex-direction:column}
+  #gate input{background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+        color:var(--text);padding:10px 12px;font-size:14px;width:100%}
+  #gate button{background:var(--accent);border:0;border-radius:10px;color:#fff;
+        padding:10px 14px;font-size:14px;font-weight:600}
+
+  /* companies */
+  .co{display:flex; align-items:center; gap:11px; padding:11px 0; border-top:1px solid var(--line)}
+  .co:first-child{border-top:0}
+  .co .ico{font-size:22px; width:30px; text-align:center; flex:0 0 auto}
+  .co .mid{flex:1 1 auto; min-width:0}
+  .co .name{font-weight:600}
+  .co .loc{color:var(--muted); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .co .verdict{flex:0 0 auto; text-align:right; font-size:12.5px; font-weight:600; max-width:48%}
+  .v-ok{color:var(--accent2)}
+  .v-move{color:var(--warn)}
+  .v-big{color:var(--danger)}
+  .bonus{font-variant-numeric:tabular-nums}
+
+  /* employees */
+  .emp{padding:12px 0; border-top:1px solid var(--line)}
+  .emp:first-child{border-top:0}
+  .emp-head{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap}
+  .emp-head .nm{font-weight:600}
+  .emp-head .co-tag{color:var(--muted); font-size:12px}
+  .pill{font-size:11px; padding:2px 8px; border-radius:20px; font-weight:600; margin-left:auto}
+  .pill.active{background:rgba(63,185,80,.15); color:var(--accent2)}
+  .pill.warn{background:rgba(210,153,34,.15); color:var(--warn)}
+  .pill.idle{background:rgba(248,81,73,.13); color:var(--danger)}
+  .pays{margin-top:8px; display:flex; flex-direction:column; gap:4px}
+  .pay{display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted)}
+  .pay .amt{color:var(--text); font-variant-numeric:tabular-nums}
+  .pay .n{color:var(--muted)}
+  .emp-empty{color:var(--muted); font-size:12.5px; margin-top:6px}
+
+  /* wealth */
+  .w-top{display:flex; align-items:baseline; gap:10px; margin-bottom:10px; flex-wrap:wrap}
+  .w-now{font-size:26px; font-weight:700; font-variant-numeric:tabular-nums}
+  .w-now .b{color:var(--muted); font-size:18px; font-weight:600; margin-right:2px}
+  .w-delta{font-size:13px; font-weight:600}
+  .w-delta.up{color:var(--accent2)} .w-delta.down{color:var(--danger)}
+  .chart{width:100%; height:140px; display:block}
+  .chart .area{opacity:.5}
+  .chart .ln{fill:none; stroke:var(--accent2); stroke-width:2; stroke-linejoin:round; stroke-linecap:round}
+  .chart .dot{fill:var(--accent2)}
+  .w-axis{display:flex; justify-content:space-between; color:var(--muted); font-size:11px; margin-top:4px}
+
+  a{color:var(--link); text-decoration:none}
+  .foot{color:var(--muted); font-size:11.5px; text-align:center; margin-top:8px; line-height:1.6}
+  .refresh{display:block; margin:0 auto; background:var(--panel2); border:1px solid var(--line);
+        color:var(--text); border-radius:10px; padding:9px 16px; font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="flag-irl">🇮🇪</span>
+    <div>
+      <h1>My dashboard</h1>
+      <div class="who" id="who">toie</div>
+    </div>
+  </header>
+
+  <!-- token gate (only shown if ./api-token can't be loaded) -->
+  <div class="card" id="gate-card" style="display:none">
+    <h2>API token needed</h2>
+    <div class="status">Couldn't read <code>./api-token</code>. Paste your token once — it's stored only on this device.</div>
+    <div id="gate" style="display:flex">
+      <input id="gate-input" type="password" placeholder="wae_..." autocomplete="off" spellcheck="false">
+      <button id="gate-go">Save &amp; load</button>
+    </div>
+  </div>
+
+  <!-- companies -->
+  <section class="card" id="co-card">
+    <h2>Companies — best region? <span class="sub" id="co-sub"></span></h2>
+    <div id="co-body"><div class="status"><span class="spin"></span>Loading companies…</div></div>
+  </section>
+
+  <!-- employees -->
+  <section class="card" id="emp-card">
+    <h2>Employees — clock-ins &amp; payments <span class="sub" id="emp-sub"></span></h2>
+    <div id="emp-body"><div class="status"><span class="spin"></span>Waiting…</div></div>
+  </section>
+
+  <!-- wealth -->
+  <section class="card" id="w-card">
+    <h2>Wealth trend <span class="sub" id="w-sub"></span></h2>
+    <div id="w-body"><div class="status"><span class="spin"></span>Loading…</div></div>
+  </section>
+
+  <button class="refresh" id="refresh">↻ Refresh</button>
+  <div class="foot">
+    Direct to <code>api2.warera.io</code> — no proxy. Token stays on this device.<br>
+    Keep this page private.
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+ *  My War Era dashboard — single user, single file, no worker.
+ *  All data goes straight to api2.warera.io with the API token.
+ * ════════════════════════════════════════════════════════════════ */
+const USER_ID   = '69de159fa03070cad5b1cc09';
+const USERNAME  = 'toie';
+const API       = 'https://api2.warera.io/trpc';
+const WSTATS    = 'https://api.warerastats.io/countries';
+const GAME      = 'https://app.warera.io';
+const DEPOSIT_COUNTRY_BONUS = 30;        // gameConfig.company.depositResourceBonus
+const WAGE_WINDOW_H = 48;
+
+/* Item icons (emoji — self-contained, no image files). */
+const ITEMS = {
+  cocain:{n:'Pill',e:'💊'}, coca:{n:'Plant',e:'🌿'}, lightAmmo:{n:'Light Ammo',e:'•'},
+  ammo:{n:'Ammo',e:'🔫'}, heavyAmmo:{n:'Heavy Ammo',e:'💥'}, lead:{n:'Lead',e:'⚫'},
+  cookedFish:{n:'Cooked Fish',e:'🍣'}, steak:{n:'Steak',e:'🥩'}, bread:{n:'Bread',e:'🍞'},
+  fish:{n:'Fish',e:'🐟'}, livestock:{n:'Livestock',e:'🐄'}, grain:{n:'Grain',e:'🌾'},
+  oil:{n:'Oil',e:'⛽'}, steel:{n:'Steel',e:'🏗️'}, concrete:{n:'Concrete',e:'🧱'},
+  petroleum:{n:'Petroleum',e:'🛢️'}, iron:{n:'Iron',e:'⛓️'}, limestone:{n:'Limestone',e:'🪨'},
+  paper:{n:'Paper',e:'📄'}, wood:{n:'Wood',e:'🪵'},
+};
+const itemMeta = c => ITEMS[c] || {n:c||'?', e:'📦'};
+
+/* Items the Fanatic-Industrialist +30% does NOT cover (food/plants/pills). */
+const AGRARIAN_ITEMS = new Set(['steak','bread','fish','cookedFish','livestock','grain','coca','cocain']);
+
+/* Embedded historic wealth (from the repo's data/wealth/<id>.json). */
+const WEALTH_HISTORY = {"userId":"69de159fa03070cad5b1cc09","username":"toie","snapshots":[{"t":"2026-06-13T20:05:47.798630+00:00","total":12547.24},{"t":"2026-06-14T20:09:00.839030+00:00","total":12791.36},{"t":"2026-06-15T23:22:02.044727+00:00","total":13087.72},{"t":"2026-06-16T23:07:42.560360+00:00","total":13464.82},{"t":"2026-06-17T23:08:40.340275+00:00","total":13757.46},{"t":"2026-06-18T23:22:09.895649+00:00","total":13816.07},{"t":"2026-06-19T22:32:58.250380+00:00","total":13185.86},{"t":"2026-06-20T22:46:25.114057+00:00","total":13416.01},{"t":"2026-06-21T02:01:07.488135+00:00","total":13428.07}]};
+
+/* ── token ─────────────────────────────────────────────────────── */
+let TOKEN = null;
+async function loadToken(){
+  // 1. localStorage (paste-once fallback)
+  const ls = localStorage.getItem('warera_api_token');
+  if (ls) return ls.trim();
+  // 2. ./api-token sitting next to this page (gitignored)
+  try {
+    const r = await fetch('./api-token', {cache:'no-store'});
+    if (r.ok) { const t = (await r.text()).trim(); if (t) return t; }
+  } catch {}
+  return null;
+}
+
+/* ── tRPC ──────────────────────────────────────────────────────── */
+async function trpc(endpoint, input = {}, {auth = false} = {}) {
+  const url = `${API}/${endpoint}?input=${encodeURIComponent(JSON.stringify(input))}`;
+  const headers = {};
+  if (auth) headers['X-API-Key'] = TOKEN;
+  const res = await fetch(url, {headers});
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = j?.error?.message || msg; } catch {}
+    throw new Error(`${endpoint}: ${msg}`);
+  }
+  const j = await res.json();
+  if (j?.error) throw new Error(`${endpoint}: ${j.error.message}`);
+  return j?.result?.data;
+}
+
+/* ── helpers ───────────────────────────────────────────────────── */
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = (n,d=0) => Number(n).toLocaleString(undefined,{maximumFractionDigits:d, minimumFractionDigits:0});
+const flag = code => (!code||code.length!==2) ? '🌐'
+  : code.toUpperCase().split('').map(c=>String.fromCodePoint(c.charCodeAt(0)-65+0x1F1E6)).join('');
+function ago(ms){
+  if (ms==null||!isFinite(ms)) return 'never';
+  if (ms<60000) return 'just now';
+  if (ms<3.6e6) return Math.floor(ms/60000)+'m ago';
+  if (ms<8.64e7){ const h=Math.floor(ms/3.6e6), m=Math.floor(ms%3.6e6/60000); return m?`${h}h ${m}m ago`:`${h}h ago`; }
+  return Math.floor(ms/8.64e7)+'d ago';
+}
+const $ = id => document.getElementById(id);
+
+/* ════════════════ PANEL 1: companies / best region ════════════════ */
+function depositActive(d){
+  if (!d) return false;
+  const now = Date.now();
+  return now >= new Date(d.startsAt).getTime() && now <= new Date(d.endsAt).getTime();
+}
+function computeBonus(country, region, itemCode){
+  if (!country) return null;
+  const isSpec = country.specializedItem === itemCode && !!itemCode;
+  const ind = country.industrialism || 0;
+  const lean = ind>0 ? 'ind' : ind<0 ? 'agr' : 'neutral';
+  const strategic = isSpec ? (country.productionBonus || 0) : 0;
+  const specialisation = (isSpec && lean==='ind' && !AGRARIAN_ITEMS.has(itemCode)) ? 30 : 0;
+  const hasDep = !!region.deposit && region.deposit.type===itemCode
+              && depositActive(region.deposit) && !(isSpec && lean==='ind');
+  const deposit = hasDep ? (region.deposit.bonusPercent || 0) : 0;
+  const depositCountry = (hasDep && lean==='agr') ? DEPOSIT_COUNTRY_BONUS : 0;
+  const total = strategic + specialisation + deposit + depositCountry;
+  const tax = country.incomeTax || 0;
+  const netMult = (1 + total/100) * (1 - tax/100);
+  return {total, tax, netMult, deposit};
+}
+
+async function loadCompanies(){
+  const sub = $('co-sub'), body = $('co-body');
+  try {
+    // bulk reference data + company list, all in parallel
+    const [list, regionsObj, wstatsRaw, workers] = await Promise.all([
+      trpc('company.getCompanies', {userId:USER_ID, perPage:100}),
+      trpc('region.getRegionsObject', {}),
+      fetch(WSTATS).then(r=>r.json()).catch(()=>[]),
+      trpc('worker.getWorkers', {userId:USER_ID}, {auth:true}).catch(()=>null),
+    ]);
+    const ids = list?.items || [];
+    if (!ids.length){ body.innerHTML = `<div class="status">No companies.</div>`; return; }
+
+    // country table from warerastats, keyed by id
+    const countryById = {};
+    (Array.isArray(wstatsRaw)?wstatsRaw:[]).forEach(c=>{
+      if (!c?.countryId) return;
+      countryById[c.countryId] = {
+        _id:c.countryId, name:c.name,
+        specializedItem:c.specializedItemCode || null,
+        productionBonus:c.productionBonusPercentage || 0,
+        industrialism:c.industrialism || 0,
+        incomeTax:c.incomeTaxPercentage || 0,
+        code:null,
+      };
+    });
+    // region -> country, plus country flag codes, grouped by country
+    const regionsByCountry = {};
+    Object.values(regionsObj).forEach(r=>{
+      if (!r?.country) return;
+      (regionsByCountry[r.country] ??= []).push(r);
+      if (countryById[r.country] && !countryById[r.country].code && r.countryCode)
+        countryById[r.country].code = r.countryCode;
+    });
+
+    // which of my companies do I personally work in? (income tax applies → optimise take-home)
+    const worksIn = new Set();
+    (workers?.workersPerCompany || []).forEach(({company, workers:ws})=>{
+      (ws||[]).forEach(w=>{ if ((w.user||w)===USER_ID && company?._id) worksIn.add(company._id); });
+    });
+
+    const companies = await Promise.all(ids.map(id => trpc('company.getById',{companyId:id}).catch(()=>null)));
+
+    let moveCount = 0;
+    const rows = companies.filter(Boolean).map(co=>{
+      const meta = itemMeta(co.itemCode);
+      const curRegion = regionsObj[co.region];
+      const curCountry = curRegion ? countryById[curRegion.country] : null;
+      const cur = curRegion ? computeBonus(curCountry, curRegion, co.itemCode) : null;
+      const useNet = worksIn.has(co._id);
+      const score = b => useNet ? b.netMult : (1 + b.total/100);
+
+      // best region across the whole map for this item
+      let best=null, bestRegion=null, bestCountry=null;
+      for (const cid in countryById){
+        const country = countryById[cid];
+        for (const region of (regionsByCountry[cid]||[])){
+          const b = computeBonus(country, region, co.itemCode);
+          if (!b) continue;
+          if (!best || score(b) > score(best)){ best=b; bestRegion=region; bestCountry=country; }
+        }
+      }
+
+      let verdict, vcls, locLine;
+      if (!cur){
+        verdict='No data'; vcls='';
+        locLine='Unknown region';
+      } else {
+        locLine = `${esc(curRegion.name)} · ${flag(curCountry?.code)} +${num(cur.total,1)}%${cur.tax?` · ${num(cur.tax,1)}% tax`:''}`;
+        const imp = best ? (score(best)-score(cur))/score(cur)*100 : 0;
+        const sameRegion = bestRegion && curRegion._id===bestRegion._id;
+        if (sameRegion || imp < 2){
+          verdict='✓ Best placed'; vcls='v-ok';
+        } else {
+          moveCount++;
+          const where = bestCountry && curCountry && bestCountry._id===curCountry._id
+            ? esc(bestRegion.name) : `${esc(bestRegion.name)} ${flag(bestCountry?.code)}`;
+          verdict = `→ ${where}<br>+${num(imp,1)}% ${useNet?'take-home':'output'}`;
+          vcls = imp>=20 ? 'v-big' : 'v-move';
+        }
+      }
+      return `<div class="co">
+        <div class="ico">${meta.e}</div>
+        <div class="mid">
+          <div class="name">${esc(meta.n)} ${useNet?'<span class="co-tag" title="You work here — tax applies">👷</span>':''}
+            <a href="${GAME}/company/${co._id}" target="_blank" rel="noopener">↗</a></div>
+          <div class="loc bonus">${locLine}</div>
+        </div>
+        <div class="verdict ${vcls}">${verdict}</div>
+      </div>`;
+    }).join('');
+
+    sub.textContent = `${companies.filter(Boolean).length} total`;
+    body.innerHTML = rows + (moveCount
+      ? `<div class="status" style="padding-top:12px">${moveCount} could earn more elsewhere.</div>`
+      : `<div class="status" style="padding-top:12px">All optimally placed. 🎉</div>`);
+    return {workers, worksIn};
+  } catch (e){
+    body.innerHTML = `<div class="status error">${esc(e.message)}</div>`;
+    throw e;
+  }
+}
+
+/* ════════════════ PANEL 2: employees ════════════════ */
+async function loadEmployees(workers){
+  const sub = $('emp-sub'), body = $('emp-body');
+  try {
+    if (!workers){ workers = await trpc('worker.getWorkers',{userId:USER_ID},{auth:true}); }
+    // build unique worker map (id -> {wage, fidelity, company})
+    const map = new Map();
+    (workers?.workersPerCompany || []).forEach(entry=>{
+      const c = entry.company;
+      (entry.workers||[]).forEach(w=>{
+        const uid = w.user || w._id || w;
+        if (uid && uid!==USER_ID && !map.has(uid))
+          map.set(uid, {id:uid, wage:w.wage, fidelity:w.fidelity, company:c});
+      });
+    });
+    const list = [...map.values()];
+    if (!list.length){ sub.textContent='0'; body.innerHTML=`<div class="status">No employees.</div>`; return; }
+    sub.textContent = `${list.length}`;
+
+    const now = Date.now(), cutoff = now - WAGE_WINDOW_H*3.6e6;
+    await Promise.all(list.map(async w=>{
+      try {
+        const [profile, txs] = await Promise.all([
+          trpc('user.getUserById',{userId:w.id}).catch(()=>null),
+          trpc('transaction.getPaginatedTransactions',{userId:w.id, transactionType:'wage', limit:100},{auth:true}).catch(()=>({items:[]})),
+        ]);
+        w.name = profile?.username || ('user '+w.id.slice(-5));
+        // clock-ins = wages this worker SOLD to me
+        w.punches = (txs?.items||[])
+          .filter(t => t.sellerId===w.id && t.buyerId===USER_ID)
+          .map(t => ({at:new Date(t.createdAt).getTime(), amt:t.money}))
+          .sort((a,b)=>b.at-a.at);
+      } catch { w.name='?'; w.punches=[]; }
+    }));
+
+    list.sort((a,b)=>(b.punches[0]?.at||0)-(a.punches[0]?.at||0));
+
+    body.innerHTML = list.map(w=>{
+      const last = w.punches[0];
+      const lastMs = last ? now-last.at : null;
+      let cls='idle', label='Idle';
+      if (lastMs==null){ cls='idle'; label='No clock-ins'; }
+      else if (lastMs < 24*3.6e6){ cls='active'; label='Active'; }
+      else if (lastMs < WAGE_WINDOW_H*3.6e6){ cls='warn'; label='Slowing'; }
+      const recent = w.punches.filter(p=>p.at>=cutoff);
+      const pays = w.punches.slice(0,5).map(p=>`
+        <div class="pay"><span>${esc(ago(now-p.at))}</span><span class="amt">₿${num(p.amt,3)}</span></div>`).join('');
+      return `<div class="emp">
+        <div class="emp-head">
+          <span class="nm"><a href="${GAME}/user/${w.id}" target="_blank" rel="noopener">${esc(w.name)}</a></span>
+          ${w.company?.name?`<span class="co-tag">${itemMeta(w.company.itemCode).e} ${esc(w.company.name)}</span>`:''}
+          <span class="pill ${cls}">${label}${lastMs!=null?' · '+esc(ago(lastMs)):''}</span>
+        </div>
+        ${w.punches.length
+          ? `<div class="pays">${pays}</div>
+             <div class="pay n">${recent.length} clock-in${recent.length===1?'':'s'} in last ${WAGE_WINDOW_H}h</div>`
+          : `<div class="emp-empty">No wage payments on record.</div>`}
+      </div>`;
+    }).join('');
+  } catch (e){
+    body.innerHTML = `<div class="status error">${esc(e.message)}</div>`;
+  }
+}
+
+/* ════════════════ PANEL 3: wealth ════════════════ */
+async function loadWealth(){
+  const sub = $('w-sub'), body = $('w-body');
+  try {
+    // historic (embedded) + live "now"
+    const points = WEALTH_HISTORY.snapshots.map(s=>({t:new Date(s.t).getTime(), v:s.total}));
+    let live = null;
+    try {
+      const u = await trpc('user.getUserById',{userId:USER_ID});
+      const t = u?.stats?.wealth?.total;
+      if (typeof t==='number'){ live = t; }
+    } catch {}
+    const today = new Date().toISOString().slice(0,10);
+    if (live!=null){
+      const lastIsToday = points.length && new Date(points[points.length-1].t).toISOString().slice(0,10)===today;
+      if (lastIsToday) points[points.length-1] = {t:Date.now(), v:live};
+      else points.push({t:Date.now(), v:live});
+    }
+    if (points.length<2){ body.innerHTML=`<div class="status">Not enough history yet.</div>`; return; }
+
+    const first = points[0].v, now = points[points.length-1].v;
+    const delta = now-first, dpct = first ? delta/first*100 : 0;
+    sub.textContent = `${points.length} days`;
+
+    // SVG sparkline
+    const W=520, H=140, pad=8;
+    const vs=points.map(p=>p.v), min=Math.min(...vs), max=Math.max(...vs), span=(max-min)||1;
+    const x=i=>pad + i*(W-2*pad)/(points.length-1);
+    const y=v=>pad + (1-(v-min)/span)*(H-2*pad);
+    const path=points.map((p,i)=>`${i?'L':'M'}${x(i).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ');
+    const area=`${path} L${x(points.length-1).toFixed(1)} ${H-pad} L${pad} ${H-pad} Z`;
+    const li=points.length-1;
+
+    body.innerHTML = `
+      <div class="w-top">
+        <div class="w-now"><span class="b">₿</span>${num(now,0)}</div>
+        <div class="w-delta ${delta>=0?'up':'down'}">${delta>=0?'▲':'▼'} ₿${num(Math.abs(delta),0)} (${delta>=0?'+':'−'}${num(Math.abs(dpct),1)}%)</div>
+      </div>
+      <svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#3fb950" stop-opacity=".45"/>
+          <stop offset="1" stop-color="#3fb950" stop-opacity="0"/>
+        </linearGradient></defs>
+        <path class="area" d="${area}" fill="url(#g)"/>
+        <path class="ln" d="${path}"/>
+        <circle class="dot" cx="${x(li).toFixed(1)}" cy="${y(points[li].v).toFixed(1)}" r="3.5"/>
+      </svg>
+      <div class="w-axis">
+        <span>${new Date(points[0].t).toLocaleDateString(undefined,{day:'numeric',month:'short'})}</span>
+        <span>${live!=null?'live now':new Date(points[li].t).toLocaleDateString(undefined,{day:'numeric',month:'short'})}</span>
+      </div>`;
+  } catch (e){
+    body.innerHTML = `<div class="status error">${esc(e.message)}</div>`;
+  }
+}
+
+/* ════════════════ boot ════════════════ */
+async function boot(){
+  $('who').textContent = USERNAME;
+  TOKEN = await loadToken();
+  if (!TOKEN){
+    $('gate-card').style.display='';
+    ['co-card','emp-card','w-card'].forEach(id=>$(id).style.display='none');
+    return;
+  }
+  $('gate-card').style.display='none';
+  ['co-card','emp-card','w-card'].forEach(id=>$(id).style.display='');
+  // wealth is independent — fire it immediately; companies feeds employees the roster
+  loadWealth();
+  let res = null;
+  try { res = await loadCompanies(); } catch {}
+  loadEmployees(res?.workers);
+}
+
+$('gate-go').addEventListener('click', ()=>{
+  const v = $('gate-input').value.trim();
+  if (!v) return;
+  localStorage.setItem('warera_api_token', v);
+  TOKEN = v; boot();
+});
+$('gate-input').addEventListener('keydown', e=>{ if(e.key==='Enter') $('gate-go').click(); });
+$('refresh').addEventListener('click', boot);
+
+boot();
+</script>
+</body>
+</html>
