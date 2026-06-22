@@ -71,6 +71,14 @@
   .v-ok{color:var(--accent2)} .v-move{color:var(--warn)} .v-big{color:var(--danger)}
   .bonus{font-variant-numeric:tabular-nums}
   .wc{color:var(--muted); font-size:11px; font-weight:500}
+  .co-notice{display:flex; align-items:center; gap:9px; padding:6px 2px 2px; color:var(--accent2); font-weight:650; font-size:15px}
+  .co-notice .em{font-size:18px}
+  details.co-fold{margin-top:8px}
+  details.co-fold>summary{cursor:pointer; list-style:none; color:var(--muted); font-size:12.5px; font-weight:600;
+        padding:9px 0 4px; border-top:1px solid var(--line)}
+  details.co-fold>summary::-webkit-details-marker{display:none}
+  details.co-fold>summary::before{content:"▸ "; color:var(--muted)}
+  details.co-fold[open]>summary::before{content:"▾ "}
 
   /* employees */
   .emp{padding:12px 0; border-top:1px solid var(--line)}
@@ -254,6 +262,23 @@ function orderMid(d){
   if(isFinite(ask)) return ask; if(isFinite(bid)) return bid; return null;
 }
 
+/* Render company rows: keep anything needing attention visible; fold the
+ * optimally-placed ones away (collapsed by default) behind a notice. */
+function renderCompanyList(rows){
+  if(!rows.length) return `<div class="status">No companies.</div>`;
+  const ok = rows.filter(r=>r.ok).map(r=>r.html);
+  const attn = rows.filter(r=>!r.ok).map(r=>r.html);
+  const fold = ok.length
+    ? `<details class="co-fold"><summary>${ok.length} optimally placed — tap to view</summary>${ok.join('')}</details>`
+    : '';
+  if(!attn.length){
+    // everything is best placed
+    return `<div class="co-notice"><span class="em">🎉</span> All ${ok.length} compan${ok.length===1?'y is':'ies are'} in their best region.</div>${fold}`;
+  }
+  const noun = attn.length===1 ? 'company could' : 'companies could';
+  return `<div class="status" style="padding:2px 2px 6px;color:var(--warn)">${attn.length} ${noun} earn more elsewhere:</div>${attn.join('')}${fold}`;
+}
+
 /* ════════════════ SHARED LOAD: companies + employees ════════════════ */
 let EMP_STATE = null;   // {list, now} for re-sorting without refetch
 
@@ -341,7 +366,7 @@ async function loadDashboard(){
         }
       }
       const wc = co.workerCount!=null ? `<span class="wc">· ${co.workerCount} worker${co.workerCount===1?'':'s'}</span>` : '';
-      return `<div class="co">
+      const html = `<div class="co">
         ${iconHtml(co.itemCode)}
         <div class="mid">
           <div class="name"><span class="nm">${esc(co.name||meta.n)}</span>${useNet?' 👷':''}
@@ -350,10 +375,10 @@ async function loadDashboard(){
         </div>
         <div class="verdict ${vcls}">${verdict}</div>
       </div>`;
+      return {html, ok: vcls==='v-ok'};
     });
     $('co-sub').textContent=`${companies.length} total`;
-    coBody.innerHTML = (coRows.join('')||`<div class="status">No companies.</div>`)
-      + (companies.length?`<div class="status" style="padding-top:12px">${moveCount?`${moveCount} could earn more elsewhere.`:'All optimally placed. 🎉'}</div>`:'');
+    coBody.innerHTML = renderCompanyList(coRows);
 
     /* ---- employees ---- */
     await loadEmployees(workers, companyMeta);
