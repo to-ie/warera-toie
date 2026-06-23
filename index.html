@@ -107,6 +107,8 @@
   details.pays[open] summary::before{content:"▾ "}
   .pay{display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted); padding:3px 0 3px 14px}
   .pay .amt{color:var(--text); font-variant-numeric:tabular-nums}
+  .pay .batch{color:var(--muted); font-size:10.5px; background:var(--panel2); border:1px solid var(--line);
+        border-radius:10px; padding:1px 6px; margin-left:7px}
   .emp-empty{color:var(--muted); font-size:12.5px; margin-top:6px}
 
   /* wealth */
@@ -197,6 +199,7 @@ const GAME  = 'https://app.warera.io';
 const DEPOSIT_COUNTRY_BONUS = 30;
 const WORK_FACTOR = 0.24;          // matches the daily-profit tool
 const WAGE_WINDOW_H = 48;
+const BATCH_GAP_MS = 5*60_000;     // wage payments ≤5 min apart = one work session
 
 const ITEMS = {
   cocain:{n:'Pill',e:'💊'}, coca:{n:'Plant',e:'🌿'}, lightAmmo:{n:'Light Ammo',e:'•'},
@@ -250,6 +253,19 @@ function ago(ms){
 }
 function fmtSkill(n){ if(n==null||!isFinite(n)) return '–'; const r=Math.round(n*10)/10; return Number.isInteger(r)?String(r):r.toFixed(1); }
 const $ = id => document.getElementById(id);
+
+/* Group wage payments into work sessions: punches ≤BATCH_GAP_MS apart are
+ * one batch. punches must be sorted newest-first. Returns newest-first
+ * sessions with {at:newest, count, total}. */
+function groupPunches(punches){
+  const g=[];
+  for(const p of punches){
+    const cur=g[g.length-1];
+    if(cur && (cur.oldest - p.at) <= BATCH_GAP_MS){ cur.count++; cur.total+=p.amt||0; cur.oldest=p.at; }
+    else g.push({at:p.at, oldest:p.at, count:1, total:p.amt||0});
+  }
+  return g;
+}
 
 /* ── bonus model (country data from data/countries.json) ── */
 function depositActive(d){ if(!d) return false; const now=Date.now(); return now>=new Date(d.startsAt).getTime() && now<=new Date(d.endsAt).getTime(); }
@@ -441,10 +457,20 @@ async function loadEmployees(workers, companyMeta){
       const np=cm?cm.netPP:null;
       if(np!=null && w.wage!=null){
         const basePP=(w.production||0)*(w.energy||0)*WORK_FACTOR;
-        w.margin=np*(1+(w.fidelity||0)/100) - w.wage;   // per base PP
+        const fid=w.fidelity||0;
+        w.margin=np*(1+fid/100) - w.wage;               // per base PP, at current fidelity
         w.dailyProfit=basePP*w.margin;
-        w.breakeven=np*1.10;                            // max wage profitable at any fidelity (fid=10)
-      } else { w.margin=null; w.dailyProfit=null; w.breakeven=null; }
+        w.breakeven=np*1.10;                            // max wage profitable at max fidelity (fid=10)
+        // Fidelity rises ~+1/day (cap 10). If they're losing now but the wage
+        // is below the max-fidelity break-even, project the day they flip.
+        if(w.margin>0){ w.profitState='now'; }
+        else if(np>0){
+          const fidNeeded=(w.wage/np - 1)*100;          // fidelity where net hits 0
+          const fidInt=Math.floor(fidNeeded)+1;         // smallest fidelity that turns a profit
+          if(fidInt<=10){ w.profitState='soon'; w.profitFid=fidInt; w.daysToProfit=Math.max(1, fidInt-fid); }
+          else w.profitState='never';
+        } else w.profitState='never';
+      } else { w.margin=null; w.dailyProfit=null; w.breakeven=null; w.profitState='unknown'; }
     }catch{ w.name='?'; w.punches=[]; w.margin=null; }
   }));
 
@@ -475,17 +501,24 @@ function renderEmployees(){
     else if(lastMs<24*3.6e6){cls='active';label='Active';}
     else if(lastMs<WAGE_WINDOW_H*3.6e6){cls='warn';label='Slowing';}
     const recent=w.punches.filter(p=>p.at>=cutoffOf(now));
-    // profitability pill
+    const recentTotal=recent.reduce((s,p)=>s+(p.amt||0),0);
+    // profitability pill — profitable / profitable in X days / not profitable
     let prof='';
     const perDay=w.dailyProfit!=null?` · ₿${num(w.dailyProfit,1)}/d`:'';
-    if(w.margin==null) prof=`<span class="pill unk" title="Need market price + recipe to compute">profit ?</span>`;
-    else if(w.margin>0) prof=`<span class="pill prof" title="Output value beats their wage — ≈ ₿${num(w.dailyProfit,2)}/day net to you">profitable${perDay}</span>`;
-    else {
-      const anyFid = w.breakeven!=null && w.wage>w.breakeven;
-      prof=`<span class="pill loss" title="Wage exceeds the value they produce — ≈ ₿${num(w.dailyProfit,2)}/day.${anyFid?` Wage is above the break-even (₿${num(w.breakeven,3)}/pt at fidelity 10) — unprofitable at ANY fidelity.`:' Raising their fidelity could turn this around.'}">losing${perDay}${anyFid?' (any fid)':''}</span>`;
+    if(w.profitState==='unknown') prof=`<span class="pill unk" title="Need market price + recipe to compute">profit ?</span>`;
+    else if(w.profitState==='now') prof=`<span class="pill prof" title="Output value beats their wage — ≈ ₿${num(w.dailyProfit,2)}/day net to you">profitable${perDay}</span>`;
+    else if(w.profitState==='soon'){
+      const d=w.daysToProfit;
+      prof=`<span class="pill warn" title="Losing ≈ ₿${num(Math.abs(w.dailyProfit),2)}/day now. Fidelity rises ~+1/day; at fidelity ${w.profitFid} (~${d} day${d===1?'':'s'}) they turn a profit.">profitable in ${d}d</span>`;
     }
+    else prof=`<span class="pill loss" title="Wage (₿${num(w.wage,3)}/pt) exceeds the break-even (₿${num(w.breakeven,3)}/pt at max fidelity) — can't profit at this wage. ≈ ₿${num(w.dailyProfit,2)}/day.">not profitable</span>`;
 
-    const pays=w.punches.slice(0,8).map(p=>`<div class="pay"><span>${esc(ago(now-p.at))}</span><span class="amt">₿${num(p.amt,3)}</span></div>`).join('');
+    const sessions=groupPunches(w.punches);
+    const shown=sessions.slice(0,8);
+    const pays=shown.map(g=>{
+      const batch=g.count>1?`<span class="batch">${g.count} cycles</span>`:'';
+      return `<div class="pay"><span>${esc(ago(now-g.at))}${batch}</span><span class="amt">₿${num(g.total,3)}</span></div>`;
+    }).join('');
     return `<div class="emp">
       <div class="emp-head">
         <span class="nm"><a href="${GAME}/user/${w.id}" target="_blank" rel="noopener">${esc(w.name)}</a></span>
@@ -503,7 +536,7 @@ function renderEmployees(){
         ${statChip('fid','Fidelity', (w.fidelity||0)+'%')}
       </div>
       ${w.punches.length
-        ? `<details class="pays"><summary>${recent.length} clock-in${recent.length===1?'':'s'} in ${WAGE_WINDOW_H}h · last ${w.punches.length} payments</summary>${pays}</details>`
+        ? `<details class="pays"><summary>${recent.length} clock-in${recent.length===1?'':'s'} in ${WAGE_WINDOW_H}h · ₿${num(recentTotal,2)} wages · last ${shown.length} session${shown.length===1?'':'s'}</summary>${pays}</details>`
         : `<div class="emp-empty">No wage payments on record.</div>`}
     </div>`;
   }).join('');
